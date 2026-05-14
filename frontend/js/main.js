@@ -1,57 +1,123 @@
-// Noteify Main Application
+ // Firebase Signup System using Fetch API
+const signupForm = document.getElementById('signupForm');
 
-// Global Variables
-let notes = [];
-let filteredNotes = [];
-let editingIndex = null;
-let currentUser = null;
-let sortBy = "newest";
-let filterByTag = "all";
-
-// DOM Elements
-const notesContainer = document.getElementById("notesContainer");
-const addNoteBtn = document.getElementById("addNoteBtn");
-const searchInput = document.getElementById("searchInput");
-const scratchPad = document.getElementById("scratchPad");
-
-// Modal Elements
-const noteModal = document.getElementById("noteModal");
-const modalTitle = document.getElementById("modalTitle");
-const noteTitle = document.getElementById("noteTitle");
-const noteBody = document.getElementById("noteBody");
-const saveNoteBtn = document.getElementById("saveNoteBtn");
-const closeModalBtn = document.getElementById("closeModalBtn");
-
-// Initialization
-document.addEventListener("DOMContentLoaded", function () {
-  // Check if user is logged in
-  currentUser = StorageManager.getCurrentUser();
-
-  if (!currentUser || !localStorage.getItem("noteify_token")) {
-    UIManager.showNotification("Please login first", "error");
-    window.location.href = "login.html";
-    return;
-  }
-
-  // Initialize application
-  initializeApp();
+document.addEventListener('DOMContentLoaded', function() {
+    setupMobileNavigation();
+    setupThemeToggle();
+    initializeFirebaseAuth();
 });
 
-function initializeApp() {
-  // Display welcome message
-  UIManager.displayWelcomeMessage(currentUser.name);
+async function initializeFirebaseAuth() {
+    let attempts = 0;
+    while (!window.firebaseAPI && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+    }
+    
+    if (!window.firebaseAPI) {
+        showNotification('Firebase authentication not available', 'error');
+        return;
+    }
+    
+    setupFirebaseEventListeners();
+}
 
-  // Load user data
-  loadUserData();
+function setupFirebaseEventListeners() {
+    if (signupForm) {
+        signupForm.addEventListener('submit', handleEmailSignup);
+    }
+}
 
-  // Setup event listeners
-  setupEventListeners();
+async function handleEmailSignup(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value.trim();
+    const confirmPassword = document.getElementById('confirm-password').value.trim();
+    
+    // Validation
+    if (!name || !email || !password || !confirmPassword) {
+        showNotification('Please fill in all fields', 'error');
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        showNotification('Passwords do not match', 'error');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showNotification('Password must be at least 6 characters long', 'error');
+        return;
+    }
+    
+    const submitBtn = signupForm.querySelector('button[type="submit"]');
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Creating Account...';
+    submitBtn.disabled = true;
+    
+    try {
+        await window.firebaseAPI.signUp(email, password, name);
+        showNotification('Account created successfully!', 'success');
+        
+        setTimeout(() => {
+            window.location.href = 'main.html';
+        }, 1000);
+        
+    } catch (error) {
+        showNotification(error.message, 'error');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+    }
+}
 
-  // Initial render
-  renderNotes();
-  UIManager.updateNotesCount(notes.length);
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+        border-radius: 8px; color: white; font-weight: 500; z-index: 10000;
+        max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transform: translateX(100%); transition: transform 0.3s ease;
+    `;
+    
+    const colors = { success: '#28a745', error: '#dc3545', warning: '#ffc107', info: '#17a2b8' };
+    notification.style.backgroundColor = colors[type] || colors.info;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    setTimeout(() => notification.style.transform = 'translateX(0)', 100);
+    setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
 
-  // If opened from file viewer to edit a specific note, handle it now
+function setupThemeToggle() {
+    const themeToggle = document.getElementById('themeToggle');
+    if (!themeToggle) return;
+    
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    updateThemeIcon(currentTheme);
+    
+    themeToggle.addEventListener('click', function() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon(newTheme);
+    });
+}
+
+function updateThemeIcon(theme) {
+    const themeIcon = document.querySelector('.theme-icon');
+    if (themeIcon) {
+        themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+}  // If opened from file viewer to edit a specific note, handle it now
   try {
     const openId = localStorage.getItem("openNoteIdForEdit");
     if (openId) {
