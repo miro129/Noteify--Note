@@ -157,6 +157,26 @@ function setupEventListeners() {
 
 // Note Operations
 
+
+
+  // Tags modal
+  const tagsModal = document.getElementById("tagsModal");
+  if (tagsModal) {
+    tagsModal.addEventListener("click", function (e) {
+      if (e.target === tagsModal) {
+        TagsManager.closeTagsModal();
+      }
+    });
+  }
+
+  const closeTagsBtn = document.getElementById("closeTagsBtn");
+  if (closeTagsBtn) {
+    closeTagsBtn.addEventListener("click", TagsManager.closeTagsModal);
+  }
+}
+
+// Note Operations
+
 function openNewNoteModal() {
   editingIndex = null;
   modalTitle.textContent = "New Note";
@@ -170,7 +190,7 @@ function closeModal() {
   UIManager.hideModal(noteModal);
 }
 
-function saveNote() {
+async function saveNote() {
   const title = noteTitle.value.trim();
   const body = noteBody.value.trim();
 
@@ -179,26 +199,32 @@ function saveNote() {
     return;
   }
 
-  if (editingIndex === null) {
-    // Create new note
-    const newNote = NotesManager.createNote(title, body);
-    notes.unshift(newNote);
-    UIManager.showNotification("Note created successfully!", "success");
-  } else {
-    // Update existing note
-    notes[editingIndex] = NotesManager.updateNote(
-      notes[editingIndex],
-      title,
-      body,
-    );
-    UIManager.showNotification("Note updated successfully!", "success");
-  }
+  const btn = saveNoteBtn;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
 
-  // Save and refresh
-  StorageManager.saveUserNotes(currentUser.id, notes);
-  renderNotes();
-  UIManager.updateNotesCount(notes.length);
-  closeModal();
+  try {
+    if (editingIndex === null) {
+      const newNote = await NoteifyAPI.createNote(title, body, []);
+      notes.unshift(newNote);
+      UIManager.showNotification("Note created successfully!", "success");
+    } else {
+      const noteId = notes[editingIndex].id;
+      const tags = notes[editingIndex].tags || [];
+      const updatedNote = await NoteifyAPI.updateNote(noteId, title, body, tags);
+      notes[editingIndex] = updatedNote;
+      UIManager.showNotification("Note updated successfully!", "success");
+    }
+
+    renderNotes();
+    UIManager.updateNotesCount(notes.length);
+    closeModal();
+  } catch (err) {
+    UIManager.showNotification(err.message || 'Failed to save note', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
 }
 
 function handleSearch() {
@@ -225,6 +251,54 @@ function handleSearch() {
 }
 
 // Rendering
+
+function renderNotes() {
+  notesContainer.innerHTML = "";
+
+  if (notes.length === 0) {
+    renderEmptyState();
+    return;
+  }
+
+  // Filter notes by tag first
+  let filteredNotes = NotesManager.filterNotesByTag(notes, filterByTag);
+  // Sort the filtered notes by most recent activity (createdAt or updatedAt)
+  const sortedByActivity = [...filteredNotes].sort((a, b) => {
+    const aDate = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const bDate = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return bDate - aDate;
+  });
+
+  // Limit to most recent three notes for main page display
+  const shownNotes = sortedByActivity.slice(0, 3);
+
+  // Group by tags if sorting by tags (operate on limited set)
+  if (sortBy === "tags") {
+    renderGroupedNotes(shownNotes);
+  } else {
+    renderRegularNotes(shownNotes);
+  }
+}
+
+function renderEmptyState() {
+  notesContainer.innerHTML = `
+        <div style="text-align: center; padding: 40px; color: #666;">
+            <h3>No notes yet</h3>
+            <p>Click "Add Note" in the sidebar to create your first note!</p>
+        </div>
+    `;
+}
+
+function renderGroupedNotes(notes) {
+  const { groups, untagged } = NotesManager.groupNotesByTag(notes);
+
+  // Render tagged groups
+  Object.keys(groups)
+    .sort()
+    .forEach((tag) => {
+      const groupDiv = createTagGroup(tag, groups[tag]);
+      notesContainer.appendChild(groupDiv);
+    });
 
 function renderNotes() {
   notesContainer.innerHTML = "";
